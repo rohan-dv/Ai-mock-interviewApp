@@ -4,6 +4,7 @@ from pypdf import PdfReader
 from docx import Document
 
 
+
 def extract_text_from_pdf(content: bytes) -> str:
     # convert the pdf bytes into a file-like object so pypdf can read it
     reader = PdfReader(io.BytesIO(content))
@@ -67,3 +68,4 @@ def extract_resume_text(filename: str, content: bytes) -> Tuple[str, str]:
 
     # if file type is not supported, show a clear error
     raise ValueError("unsupported file type. use pdf, docx, or txt.")
+

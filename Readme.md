@@ -1,66 +1,62 @@
 # ARIA – AI Mock Interview Platform
 
-ARIA is a full-stack mock interview platform that helps users prepare for technical and behavioral interviews through AI-driven conversations. Users can upload their resume, practice interviews tailored to their background, receive detailed feedback, track progress over time, and generate personalized study plans.
+ARIA is an AI-powered mock interview platform that helps students and job seekers prepare for technical and behavioral interviews through personalized interview sessions. Users can upload their resume, practice interviews tailored to their background, receive detailed feedback, track performance over time, and generate study plans based on identified weaknesses.
 
 ## Live Demo
 
-**Web App:** https://your-netlify-url.netlify.app
+**Web App:** https://aimockinterviewapp.netlify.app/
 
 ---
 
 ## Features
 
-### Authentication
-
-* Secure signup and login using JWT authentication
-* Protected routes and session management
-
-### Resume-Based Interviews
+### Resume-Aware Interviews
 
 * Upload resumes in PDF, DOCX, or TXT format
 * Extract skills, projects, education, and experience
-* Generate interview questions based on uploaded resume content
+* Generate interview questions based on resume content
 
-### Interview Modes
+### Multiple Interview Tracks
 
 * HR Interviews
 * Data Structures & Algorithms
 * Backend Development
 * Frontend Development
 * System Design
-* AI/ML
+* AI / Machine Learning
 * Behavioral Interviews
 
-### Adaptive Questioning
+### Adaptive Interview Flow
 
-* Questions adjust according to previous responses
-* Context-aware follow-up questions
+* Questions adapt according to previous responses
+* Follow-up questions generated dynamically
 * Multi-turn interview conversations
 
-### Voice & Text Support
+### Voice & Text Interaction
 
-* Type answers directly
-* Speak answers using browser speech recognition
+* Answer questions through text
+* Browser-based speech recognition support
 * Live transcription during interviews
 
-### Performance Evaluation
+### Feedback & Evaluation
 
-* Detailed feedback after each interview
-* Scores across multiple categories
-* Per-question analysis and suggestions
+* Detailed post-interview analysis
+* Category-wise scoring
+* Strengths, weaknesses, and improvement suggestions
+* Per-question feedback
 
 ### Analytics Dashboard
 
-* Track interview history
-* Monitor score trends
-* Identify strengths and weak areas
-* View performance across different interview categories
+* Interview history tracking
+* Performance trends over time
+* Category-wise score comparison
+* Progress monitoring
 
 ### Personalized Study Plans
 
 * Automatically generated learning roadmap
-* Topic recommendations based on interview performance
-* Suggested practice questions and resources
+* Recommended topics based on interview performance
+* Suggested practice areas
 
 ---
 
@@ -81,7 +77,6 @@ ARIA is a full-stack mock interview platform that helps users prepare for techni
 * FastAPI
 * Uvicorn
 * Pydantic
-* Motor (Async MongoDB Driver)
 
 ### Database
 
@@ -89,13 +84,12 @@ ARIA is a full-stack mock interview platform that helps users prepare for techni
 
 ### Authentication
 
-* JWT
-* bcrypt
+* JWT Authentication
+* bcrypt Password Hashing
 
-### AI Services
+### AI Integration
 
-* Gemini 3 Flash
-* OpenAI-Compatible API Integration
+* Google Gemini 2.5 Flash
 
 ### Resume Processing
 
@@ -114,8 +108,7 @@ ARIA is a full-stack mock interview platform that helps users prepare for techni
 │   ├── auth.py
 │   ├── models.py
 │   ├── resume_parser.py
-│   ├── requirements.txt
-│   └── tests/
+│   └── requirements.txt
 │
 ├── frontend/
 │   ├── public/
@@ -144,8 +137,6 @@ ARIA is a full-stack mock interview platform that helps users prepare for techni
 * MongoDB Atlas Account
 * Gemini API Key
 
----
-
 ### Backend Setup
 
 ```bash
@@ -153,7 +144,7 @@ cd backend
 
 python -m venv .venv
 
-# Linux / macOS
+# Linux/macOS
 source .venv/bin/activate
 
 # Windows
@@ -162,26 +153,25 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-Create a `.env` file inside the backend directory:
+Create a `.env` file inside `backend/`:
 
 ```env
 MONGO_URL=your_mongodb_connection_string
 DB_NAME=mock-interview-db
 
-JWT_SECRET=your_jwt_secret
+JWT_SECRET=your_secret_key
 
-LLM_API_KEY=your_api_key
-LLM_BASE_URL=https://generativelanguage.googleapis.com
-LLM_MODEL=gemini-3-flash
+GEMINI_API_KEY=your_gemini_api_key
+GEMINI_MODEL=gemini-2.5-flash
 ```
 
-Start the backend server:
+Run the backend:
 
 ```bash
 uvicorn server:app --reload --host 0.0.0.0 --port 8001
 ```
 
-Backend runs on:
+Backend URL:
 
 ```text
 http://localhost:8001
@@ -209,7 +199,7 @@ Run the frontend:
 yarn start
 ```
 
-Frontend runs on:
+Frontend URL:
 
 ```text
 http://localhost:3000
@@ -217,70 +207,49 @@ http://localhost:3000
 
 ---
 
-## API Endpoints
-
-| Method | Endpoint                      | Description       |
-| ------ | ----------------------------- | ----------------- |
-| GET    | /api/                         | Health Check      |
-| POST   | /api/auth/register            | Register User     |
-| POST   | /api/auth/login               | Login User        |
-| GET    | /api/auth/me                  | Current User      |
-| POST   | /api/resume/upload            | Upload Resume     |
-| GET    | /api/resume/latest            | Latest Resume     |
-| POST   | /api/interviews               | Create Interview  |
-| GET    | /api/interviews               | List Interviews   |
-| GET    | /api/interviews/{id}          | Interview Details |
-| POST   | /api/interviews/{id}/answer   | Submit Answer     |
-| GET    | /api/feedback/by-session/{id} | Feedback Report   |
-| GET    | /api/study-plans/latest       | Latest Study Plan |
-| GET    | /api/analytics/overview       | Analytics Data    |
-
----
-
 ## Deployment
 
-### Frontend
-
-* Netlify
-
-### Backend
-
-* Render
-
-### Database
-
-* MongoDB Atlas
+| Service  | Platform      |
+| -------- | ------------- |
+| Frontend | Netlify       |
+| Backend  | Render        |
+| Database | MongoDB Atlas |
 
 ---
 
-### Dashboard
+## Dashboard Preview
 
-![alt text](image.png)
-
-
-## Key Highlights
-
-* Resume-aware interview generation
-* Voice and text interview modes
-* Adaptive follow-up questioning
-* Automated interview evaluation
-* Personalized study plans
-* Performance analytics and progress tracking
-* Secure authentication and cloud deployment
+<img width="100%" alt="ARIA Dashboard" src="image.png">
 
 ---
 
-## Future Improvements
+## Highlights
 
-* Coding interview environment
-* Google and GitHub OAuth
-* PDF report exports
-* Webcam-based confidence analysis
+* Resume-aware interview generation using Gemini
+* Adaptive follow-up questioning based on user responses
+* Voice and text interview support
+* Automated interview evaluation and scoring
+* Personalized study-plan generation
+* Analytics dashboard for performance tracking
+* Secure JWT-based authentication
+* Fully deployed using Netlify, Render, and MongoDB Atlas
+
+---
+
+## Planned Improvements
+
+* Integrated coding interview environment
+* OAuth login (Google/GitHub)
+* Exportable interview reports
 * Real-time AI response streaming
+* Company-specific interview preparation modes
 
 ---
 
+## Author
+
+Rohan Yadav
 
 ## Live Application
 
-**https://aimockinterviewapp.netlify.app/**
+https://aimockinterviewapp.netlify.app/

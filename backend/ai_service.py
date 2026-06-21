@@ -1,86 +1,68 @@
-"""llm service wrapper for an openai-compatible chat completions endpoint.
-
-this file keeps all ai-related calls in one place so the rest of the backend
-can simply call functions like parse_resume(), generate_next_question(), and
-evaluate_interview() without worrying about provider-specific details.
-
-configure using environment variables:
-    llm_api_key    - api key for the upstream model provider
-    llm_base_url   - base url of any openai-compatible endpoint
-    llm_model      - model name or model id to call
-"""
+"""llm service wrapper using google gemini api."""
 
 import os
 import json
 import re
 import logging
 from typing import List, Dict, Any
-from openai import AsyncOpenAI
 
-# create a logger for this file so errors can be tracked during debugging
+import google.generativeai as genai
+
 logger = logging.getLogger(__name__)
 
 
-def _client() -> AsyncOpenAI:
-    """create and return a fresh async openai-compatible client."""
+def _model():
+    """create gemini model from environment variables."""
+    api_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("LLM_API_KEY")
+    model_name = os.environ.get("GEMINI_MODEL") or os.environ.get("LLM_MODEL", "gemini-1.5-flash")
 
-    # the key and base url are read from environment variables so secrets are not hardcoded
-    return AsyncOpenAI(
-        api_key=os.environ.get("LLM_API_KEY", ""),
-        base_url=os.environ.get("LLM_BASE_URL") or None,
-    )
+    if not api_key:
+        raise RuntimeError("gemini api key is missing")
 
-
-def _model() -> str:
-    """return the model configured for this project."""
-
-    # use env model if provided, otherwise fall back to a default model id
-    return os.environ.get("LLM_MODEL", "gemini/gemini-3-flash-preview")
+    genai.configure(api_key=api_key)
+    return genai.GenerativeModel(model_name)
 
 
 async def _chat(messages: List[Dict[str, str]], system: str = None) -> str:
-    """send messages to the llm and return only the assistant text."""
+    """send prompt to gemini and return response text."""
 
-    # this list becomes the final message list sent to the model
-    msgs: List[Dict[str, str]] = []
+    prompt_parts = []
 
-    # system prompt is optional, but useful for setting behavior and output format
     if system:
-        msgs.append({"role": "system", "content": system})
+        prompt_parts.append(f"system instructions:\n{system}")
 
-    # add the normal conversation messages after the system message
-    msgs.extend(messages)
+    for msg in messages:
+        role = msg.get("role", "user")
+        content = msg.get("content", "")
+        prompt_parts.append(f"{role}:\n{content}")
 
-    # make the async model call using the configured model
-    resp = await _client().chat.completions.create(model=_model(), messages=msgs)
+    prompt = "\n\n".join(prompt_parts)
 
-    # return empty string if the model response has no content
-    return resp.choices[0].message.content or ""
+    try:
+        response = await _model().generate_content_async(prompt)
+        return response.text or ""
+    except Exception as exc:
+        logger.exception("gemini request failed")
+        raise exc
 
 
 def _extract_json(text: str) -> Any:
-    """extract the first json object or array from raw llm output."""
-
-    # no text means there is nothing to parse
+    """extract the first json object or array from raw model output."""
     if not text:
         return None
 
-    # first try to find json inside markdown fences like ```json ... ```
     fence = re.search(r"```(?:json)?\s*([\s\S]*?)```", text)
     if fence:
         try:
             return json.loads(fence.group(1).strip())
         except Exception:
-            # if fenced json is broken, keep trying other fallback methods
             pass
 
-    # next try to parse the whole response as json
     try:
         return json.loads(text)
     except Exception:
         pass
 
-    # final fallback: try to locate the first object or array inside extra text
     for opener, closer in (("{", "}"), ("[", "]")):
         start = text.find(opener)
         end = text.rfind(closer)
@@ -90,21 +72,18 @@ def _extract_json(text: str) -> Any:
             except Exception:
                 continue
 
-    # return none if every parsing attempt fails
     return None
 
 
 async def parse_resume(text: str) -> Dict[str, Any]:
     """convert raw resume text into structured resume data."""
 
-    # this system prompt forces the model to behave like a strict parser
     system = (
         "You are an expert resume parser. Extract structured data from resumes. "
-        "Always respond with ONLY a valid JSON object, no commentary."
+        "Always respond with only a valid JSON object and no extra text."
     )
 
-    # the resume is trimmed so extremely large resumes do not overload the model input
-    prompt = f"""Extract the following fields from this resume text. Return ONLY JSON with this exact shape:
+    prompt = f"""Extract the following fields from this resume text. Return only JSON with this exact shape:
 {{
   "skills": [string],
   "technologies": [string],
@@ -114,15 +93,13 @@ async def parse_resume(text: str) -> Dict[str, Any]:
   "summary": string
 }}
 
-RESUME TEXT:
+Resume text:
 \"\"\"{text[:8000]}\"\"\"
 """
 
-    # call the model and try to parse its response as json
     resp = await _chat([{"role": "user", "content": prompt}], system=system)
     data = _extract_json(resp) or {}
 
-    # return a safe structure even if the model misses some fields
     return {
         "skills": data.get("skills", []) or [],
         "technologies": data.get("technologies", []) or [],
@@ -134,33 +111,32 @@ RESUME TEXT:
 
 
 def _interview_system(config: Dict[str, Any], resume_summary: str) -> str:
-    """build the system prompt used by the interviewer model."""
+    """build the interviewer instructions."""
 
-    # this prompt defines interviewer personality, rules, candidate context, and output format
-    return f"""You are an elite professional interviewer named ARIA conducting a {config['difficulty']} level {config['interview_type']} interview for a candidate targeting {config.get('target_company', 'top tech companies')}.
+    return f"""You are a professional interviewer named ARIA conducting a {config['difficulty']} level {config['interview_type']} interview for a candidate targeting {config.get('target_company', 'top tech companies')}.
 
-INTERVIEW GUIDELINES:
-- Ask ONE question at a time. Keep questions concise and realistic.
-- Build on the candidate's previous answers with follow-ups when appropriate.
+Interview rules:
+- Ask one question at a time.
+- Keep questions concise and realistic.
+- Build on previous answers when useful.
 - Adapt difficulty based on response quality.
-- Sound like a senior human interviewer, not a chatbot. No emojis, no apologies, no meta-commentary.
-- Vary question types: conceptual, scenario-based, behavioral, problem-solving, system design (as relevant).
+- Sound like a senior human interviewer.
+- Do not use emojis, apologies, or meta-commentary.
+- Vary question types based on the interview category.
 
-CANDIDATE BACKGROUND (from resume):
+Candidate background:
 {resume_summary or 'No resume provided. Ask general questions.'}
 
-PLAN: This interview will have ~{config.get('total_questions', 6)} main questions. Track progress mentally.
-When you generate a question, output ONLY the question text — no numbering, no preamble like "Sure" or "Great"."""
+The interview will have around {config.get('total_questions', 6)} main questions.
+When generating a question, output only the question text."""
 
 
 async def generate_first_question(session_id: str, config: Dict[str, Any], resume_summary: str) -> str:
-    """generate the opening interview question for a new session."""
+    """generate first interview question."""
 
-    # prepare the interviewer instructions using interview settings and resume context
     system = _interview_system(config, resume_summary)
-
-    # ask the model to start naturally with a short greeting and first question
     user = "Begin the interview. Greet briefly in one sentence, then ask your first question. Keep it short."
+
     resp = await _chat([{"role": "user", "content": user}], system=system)
     return resp.strip()
 
@@ -174,31 +150,31 @@ async def generate_next_question(
     question_index: int,
     total: int,
 ) -> str:
-    """generate the next interview question using previous qna history."""
+    """generate next interview question."""
 
-    # build the same interviewer system prompt for consistency across the interview
     system = _interview_system(config, resume_summary)
 
-    # convert stored question-answer history into a readable transcript for the model
     convo = ""
     for h in history:
-        convo += f"INTERVIEWER: {h.get('question','')}\nCANDIDATE: {h.get('answer','')}\n"
-    convo += f"CANDIDATE just answered: {last_answer}\n"
+        convo += f"interviewer: {h.get('question', '')}\n"
+        convo += f"candidate: {h.get('answer', '')}\n"
 
-    # if this is the final question, ask the model to close with a stronger final probe
+    convo += f"candidate just answered: {last_answer}\n"
+
     if question_index >= total - 1:
         user = (
-            f"Conversation so far:\n{convo}\n"
-            "This is the FINAL question. Ask one strong closing question that probes the candidate's depth or wraps up the interview meaningfully. Output ONLY the question."
+            f"conversation so far:\n{convo}\n"
+            "This is the final question. Ask one strong closing question that probes depth. "
+            "Output only the question."
         )
     else:
-        # otherwise continue naturally based on the candidate's last answer
         user = (
-            f"Conversation so far:\n{convo}\n"
-            f"Ask question {question_index + 1} of {total}. Make it flow naturally — a follow-up if their last answer was strong, or a new topic if weak/exhausted. Output ONLY the question."
+            f"conversation so far:\n{convo}\n"
+            f"Ask question {question_index + 1} of {total}. "
+            "Use a follow-up if appropriate, otherwise move to a useful new topic. "
+            "Output only the question."
         )
 
-    # return only the clean question text
     resp = await _chat([{"role": "user", "content": user}], system=system)
     return resp.strip()
 
@@ -208,49 +184,48 @@ async def evaluate_interview(
     resume_summary: str,
     history: List[Dict[str, str]],
 ) -> Dict[str, Any]:
-    """score a completed interview and return structured feedback."""
+    """score a completed interview and return feedback."""
 
-    # evaluator prompt forces strict json so the api can store the result safely
     system = (
-        "You are a senior interview evaluator. Provide rigorous, fair, actionable evaluations. "
-        "Always respond with ONLY valid JSON, no commentary."
+        "You are a senior interview evaluator. Provide fair and actionable evaluation. "
+        "Always respond with only valid JSON."
     )
 
-    # convert the interview history into a readable transcript
     transcript = "\n\n".join(
-        [f"Q{i+1}: {h.get('question','')}\nA{i+1}: {h.get('answer','') or '[no answer]'}" for i, h in enumerate(history)]
+        [
+            f"Q{i + 1}: {h.get('question', '')}\nA{i + 1}: {h.get('answer', '') or '[no answer]'}"
+            for i, h in enumerate(history)
+        ]
     )
 
-    # ask for scores, strengths, weaknesses, suggestions, topic scores, and per-question feedback
     prompt = f"""Evaluate this {config['difficulty']} {config['interview_type']} interview.
 
-CANDIDATE RESUME SUMMARY: {resume_summary or 'N/A'}
+Candidate resume summary:
+{resume_summary or 'N/A'}
 
-TRANSCRIPT:
+Transcript:
 {transcript}
 
-Return ONLY JSON with this exact shape:
+Return only JSON with this exact shape:
 {{
-  "technical_score": int (0-100),
-  "communication_score": int (0-100),
-  "confidence_score": int (0-100),
-  "problem_solving_score": int (0-100),
-  "overall_score": int (0-100),
-  "strengths": [string] (3-5 items),
-  "weaknesses": [string] (3-5 items),
-  "improvement_suggestions": [string] (4-6 actionable items),
-  "topic_scores": [{{"topic": string, "score": int (0-100)}}] (4-6 topics relevant to interview),
-  "summary": string (2-3 sentence overall assessment),
-  "per_question": [{{"question": string, "feedback": string, "score": int (0-100)}}]
+  "technical_score": int,
+  "communication_score": int,
+  "confidence_score": int,
+  "problem_solving_score": int,
+  "overall_score": int,
+  "strengths": [string],
+  "weaknesses": [string],
+  "improvement_suggestions": [string],
+  "topic_scores": [{{"topic": string, "score": int}}],
+  "summary": string,
+  "per_question": [{{"question": string, "feedback": string, "score": int}}]
 }}
 
-Be honest. If answers are weak or missing, scores should reflect that."""
+All scores must be between 0 and 100."""
 
-    # call the model and parse the returned json
     resp = await _chat([{"role": "user", "content": prompt}], system=system)
     data = _extract_json(resp) or {}
 
-    # use default values so the backend does not crash if the model returns incomplete json
     return {
         "technical_score": int(data.get("technical_score", 50)),
         "communication_score": int(data.get("communication_score", 50)),
@@ -271,19 +246,16 @@ async def generate_study_plan(
     feedback: Dict[str, Any],
     resume_summary: str,
 ) -> Dict[str, Any]:
-    """create a personalized four-week study plan after interview feedback."""
+    """create a personalized four-week study plan."""
 
-    # career coach prompt creates a learning roadmap instead of interview evaluation
     system = (
-        "You are a senior career coach building personalized learning roadmaps for engineers preparing for interviews. "
-        "Always respond with ONLY valid JSON."
+        "You are a senior career coach building learning roadmaps for engineers. "
+        "Always respond with only valid JSON."
     )
 
-    # compress the candidate's weaknesses and suggestions into prompt-friendly text
     weak = ", ".join(feedback.get("weaknesses", []))
     suggestions = " | ".join(feedback.get("improvement_suggestions", []))
 
-    # ask for a structured roadmap that the frontend can directly render
     prompt = f"""Build a personalized 4-week study plan.
 
 Interview type: {config.get('interview_type')}
@@ -293,19 +265,19 @@ Candidate weaknesses: {weak}
 Improvement suggestions: {suggestions}
 Resume summary: {resume_summary[:1500]}
 
-Return ONLY JSON:
+Return only JSON:
 {{
-  "roadmap": [{{"week": int, "focus": string, "topics": [string], "deliverables": [string]}}] (exactly 4 weeks),
-  "dsa_topics": [string] (6-10 items prioritized),
-  "system_design_topics": [string] (5-8 items),
-  "recommended_questions": [string] (8-12 actual interview-style questions),
-  "projects": [string] (3-5 portfolio project ideas),
-  "resources": [{{"name": string, "type": string, "url": string}}] (5-8 high quality resources)
+  "roadmap": [{{"week": int, "focus": string, "topics": [string], "deliverables": [string]}}],
+  "dsa_topics": [string],
+  "system_design_topics": [string],
+  "recommended_questions": [string],
+  "projects": [string],
+  "resources": [{{"name": string, "type": string, "url": string}}]
 }}"""
 
-    # call the model, parse json, and return fallback-safe fields
     resp = await _chat([{"role": "user", "content": prompt}], system=system)
     data = _extract_json(resp) or {}
+
     return {
         "roadmap": data.get("roadmap", []) or [],
         "dsa_topics": data.get("dsa_topics", []) or [],

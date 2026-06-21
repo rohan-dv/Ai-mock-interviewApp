@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useParams, Link } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { api } from "../lib/api";
@@ -40,22 +40,25 @@ export default function LiveInterview() {
   const shouldListenRef = useRef(false); // user intent — keeps mic alive across auto-restarts
   const startTime = useRef(Date.now());
 
-  const fetchSession = () => {
-    api.get(`/interviews/${sessionId}`)
-      .then((r) => {
-        setSession(r.data);
-        if (r.data.status === "completed") {
-          navigate(`/feedback/${r.data.id}`);
-        }
-      })
-      .catch(() => {
-        toast.error("Interview not found");
-        navigate("/dashboard");
-      })
-      .finally(() => setLoading(false));
-  };
+  const fetchSession = useCallback(() => {
+  api.get(`/interviews/${sessionId}`)
+    .then((r) => {
+      setSession(r.data);
 
-  useEffect(() => { fetchSession(); /* eslint-disable-next-line */ }, [sessionId]);
+      if (r.data.status === "completed") {
+        navigate(`/feedback/${r.data.id}`);
+      }
+    })
+    .catch(() => {
+      toast.error("Interview not found");
+      navigate("/dashboard");
+    })
+    .finally(() => setLoading(false));
+}, [sessionId, navigate]);
+
+  useEffect(() => {
+  fetchSession();
+}, [fetchSession]);
 
   useEffect(() => {
     const i = setInterval(() => setElapsed(Math.floor((Date.now() - startTime.current) / 1000)), 1000);
